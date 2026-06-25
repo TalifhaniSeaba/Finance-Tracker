@@ -74,7 +74,7 @@ jobs:
 
     defaults:
       run:
-        working-directory: analytics-service
+        working-directory: analytics
 
     steps:
       - name: Checkout Repository
