@@ -1,0 +1,23 @@
+name: Continuous Integration
+
+on:
+    push:
+        branches:
+            - main
+            - develop
+    
+    pull_request:
+        branches:
+            - main
+            - develop
+
+jobs:
+    build:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout Repository
+              uses: actions/checkout@v4
+
+            - name: CI Running
+              run: echo "Pipeline is working"
+              
