@@ -48,3 +48,94 @@ the main objective is to help users track their income,expenses,savings and fina
 
 * As an admin, I want to deactivate user accounts so that I can handle misuse or security issues.
 
+## Use cases 
+
+### use case 1
+
+User Registration 
+
+* **Actor:** User 
+* **TUCBW:** The user accesses the registration page then creates the account
+* **TUCEW:**  User account is created and redirected to dashboard
+
+### use case 2
+
+login
+
+* **Actor:** User 
+* **TUCBW:** User navigates to login pag and enters credentials
+* **TUCEW:** User is authenticated successfully and redirected to dashboard
+
+### use case 3 
+
+view dashboard
+
+* **Actor:** User 
+* **TUCBW:** User logs into the system, redirected to dashboard
+* **TUCEW:** Dashboard is displayed with balanc,income,expenses,savings charts and calendar view
+
+### use case 4
+
+Create, Read, Update, Delete Transcations
+
+* **Actor:** User 
+* **TUCBW:** User opens transaction and select action ( add, edit, delete, view)
+* **TUCEW:** Transaction is updated and dashboard reflects updated values. 
+
+### use case 5
+
+Categorize transactions
+
+* **Actor:** User 
+* **TUCBW:** User selects a transaction and chooses category
+* **TUCEW:** catrgory is saved and analytics is updated
+
+### use case 6
+
+Create Budget and receive alerts
+
+* **Actor:** User 
+* **TUCBW:** User sets budget limits
+* **TUCEW:** Budget is stored, alerts are triggered when exceeded
+
+### use case 7
+
+Create and track savings goals
+
+
+* **Actor:** User 
+* **TUCBW:** User opens savings goal page and enters the details 
+* **TUCEW:** Goal is stored and progresses over time
+
+### use case 8
+
+view analytics
+
+* **Actor:** User 
+* **TUCBW:** User selects date range and opens analytics
+* **TUCEW:** charts and trends are displayed
+
+### use case 9
+
+
+Generate Monthly Financial Report
+
+* **Actor:** User
+* **TUCBW:** User requests report generation
+* **TUCEW:** PDF report is generated and downloaded
+
+### use case 10
+
+Alert and Notification system
+
+* **Actor:** System
+* **TUCBW:** Budget exceeded and large transaction detected
+* **TUCEW:** Notification is delivered to user
+
+### use case 11
+
+Record User Activity
+
+* **Actor:** System
+* **TUCBW:** User performs any action
+* **TUCEW:** Action is stored in audit log database
