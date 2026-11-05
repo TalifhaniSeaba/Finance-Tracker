@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { login } from "../services/authServices";
@@ -82,17 +83,38 @@ export default function LoginPage() {
     }
 
     return (
+        <main className="auth-layout">
+            <aside className="auth-aside">
+                <Link className="brand" href="/">
+                    <span className="brand-mark" aria-hidden="true"><span /><span /><span /></span>
+                    <span>Finance<span className="brand-accent">.</span></span>
+                </Link>
+                <div className="auth-aside__content">
+                    <p className="eyebrow"><span className="eyebrow__dot" /> Your money, in focus</p>
+                    <h2>Good to see you<br /><em>again.</em></h2>
+                    <p>Pick up where you left off and keep making confident decisions with a clearer view of your money.</p>
+                </div>
+                <p className="auth-aside__footer">Track today. Plan tomorrow.</p>
+            </aside>
 
-        <main>
+            <section className="auth-page">
+                <Link className="auth-mobile-brand brand" href="/">
+                    <span className="brand-mark" aria-hidden="true"><span /><span /><span /></span>
+                    <span>Finance<span className="brand-accent">.</span></span>
+                </Link>
+                <div className="auth-heading">
+                    <p className="auth-kicker">Welcome back</p>
+                    <h1>Log in to your account</h1>
+                    <p>Enter your details to access your financial overview.</p>
+                </div>
 
-            <h1>Login</h1>
+                <form className="auth-form" onSubmit={handleSubmit}>
 
-            <form onSubmit={handleSubmit}>
-
-                <div>
-                    <label>Email</label>
+                <div className="auth-field">
+                    <label htmlFor="login-email">Email</label>
 
                     <input
+                        id="login-email"
                         type="email"
                         value={email}
                         onChange={(e) =>
@@ -106,11 +128,12 @@ export default function LoginPage() {
 
                 </div>
 
-                <div>
+                <div className="auth-field">
 
-                    <label>Password</label>
+                    <label htmlFor="login-password">Password</label>
 
                     <input
+                        id="login-password"
                         type="password"
                         value={password}
                         onChange={(e) =>
@@ -124,9 +147,7 @@ export default function LoginPage() {
 
                 </div>
 
-                {serverError && (
-                    <p>{serverError}</p>
-                )}
+                {serverError && <p className="auth-error">{serverError}</p>}
 
                 <button
                     type="submit"
@@ -139,9 +160,13 @@ export default function LoginPage() {
 
                 </button>
 
-            </form>
+                </form>
 
+                <p className="auth-switch">
+                    Don&apos;t have an account? <Link href="/signup">Create one</Link>
+                </p>
+                <Link className="auth-back" href="/">← Back to home</Link>
+            </section>
         </main>
-
     );
 }

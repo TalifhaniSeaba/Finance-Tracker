@@ -3,6 +3,13 @@ export interface LoginRequest{
     password:string;
 }
 
+export interface SignupRequest {
+    email: string;
+    password: string;
+    first_name: string;
+    last_name: string;
+}
+
 export interface loginResponse{
     message: string;
 
@@ -18,4 +25,13 @@ export interface loginResponse{
 
     error?: string;
     
+}
+
+export interface SignupResponse {
+    message: string;
+    user?: {
+        id: string;
+        email: string;
+    };
+    error?: string;
 }
