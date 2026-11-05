@@ -1,9 +1,10 @@
 import { Request, Response, NextFunction } from "express";
 import { supabase } from "../src/config/supabase";
+import type { User } from "@supabase/supabase-js";
 
 
 export interface AuthRequest extends Request {
-  user?: any;
+  user?: User;
 }
 
 export const authenticate = async (
@@ -34,9 +35,12 @@ export const authenticate = async (
     req.user = data.user;
 
     next();
-  } catch (err: any) {
+  } catch (err: unknown) {
+
+    const errorMessage =
+      err instanceof Error ? err.message : "An unknown error occurred";
     return res.status(500).json({
-      error: err.message,
+      message: errorMessage,
     });
   }
 };

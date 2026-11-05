@@ -5,7 +5,7 @@ export async function login(
     credentials: LoginRequest
 ): Promise<loginResponse> {
 
-    return apiFetch("/auth/login", {
+    return apiFetch("/api/auth/login", {
         method: "POST",
         body: JSON.stringify(credentials),
     });
