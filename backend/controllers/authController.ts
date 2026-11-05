@@ -47,9 +47,12 @@ export const register = async (req: Request, res: Response) => {
         email: user.email,
       },
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
+
+    const message =
+      err instanceof Error ? err.message : "An unknown error occurred";
     return res.status(500).json({
-      error: err.message,
+      message
     });
   }
 };
@@ -80,9 +83,11 @@ export const login = async (req: Request, res: Response) => {
       user: data.user,
       session: data.session,
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
+    const message =
+      err instanceof Error ? err.message : "An unknown error occurred";
     return res.status(500).json({
-      error: err.message,
+      message
     });
   }
 };
@@ -100,9 +105,12 @@ export const logout = async (_req: Request, res: Response) => {
     return res.status(200).json({
       message: "Logged out successfully",
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
+
+    const message =
+      err instanceof Error ? err.message : "An unknown error occurred";   
     return res.status(500).json({
-      error: err.message,
+      message
     });
   }
 };
@@ -131,9 +139,15 @@ export const getCurrentUser = async (req: Request, res: Response) => {
     return res.status(200).json({
       user: data.user,
     });
-  } catch (err: any) {
+  } catch (error: unknown) {
+
+    const message = error instanceof Error
+            ? error.message
+            : "An unexpected error occurred";
+
+
     return res.status(500).json({
-      error: err.message,
+      message
     });
   }
 };

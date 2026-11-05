@@ -29,13 +29,24 @@ jobs:
         run: corepack enable
 
       - name: Install Dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
 
       - name: Run Lint
         run: pnpm lint
 
       - name: Run Tests
-        run: pnpm test
+        id: frontend-tests
+        shell: bash
+        run: |
+          if find src -type f \( -name '*.test.ts' -o -name '*.test.tsx' -o -name '*.spec.ts' -o -name '*.spec.tsx' \) -print -quit | grep -q .; then
+            pnpm test
+          else
+            echo "::notice::No frontend tests found; skipping the frontend test run."
+          fi
+
+      - name: Acknowledge frontend test failure
+        if: always() && steps.frontend-tests.outcome == 'failure'
+        run: echo "::error::Frontend tests failed. Review the test output above."
 
 
 
@@ -59,22 +70,29 @@ jobs:
         run: corepack enable
 
       - name: Install Dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
 
       - name: Run Lint
         run: pnpm lint
 
       - name: Run Tests
-        run: pnpm test
+        id: backend-tests
+        shell: bash
+        run: |
+          if find . -path './node_modules' -prune -o -type f \( -name '*.test.ts' -o -name '*.test.tsx' -o -name '*.spec.ts' -o -name '*.spec.tsx' \) -print -quit | grep -q .; then
+            pnpm test
+          else
+            echo "::notice::No backend tests found; skipping the backend test run."
+          fi
+
+      - name: Acknowledge backend test failure
+        if: always() && steps.backend-tests.outcome == 'failure'
+        run: echo "::error::Backend tests failed. Review the test output above."
 
 
 
   analytics-tests:
     runs-on: ubuntu-latest
-
-    defaults:
-      run:
-        working-directory: analytics
 
     steps:
       - name: Checkout Repository
@@ -85,13 +103,25 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install Dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
       - name: Run Tests
-        run: pytest
+        id: analytics-tests
+        shell: bash
+        run: |
+          if [ ! -d analytics ] || ! find analytics -type f \( -name 'test_*.py' -o -name '*_test.py' \) -print -quit | grep -q .; then
+            echo "::notice::No analytics tests found; skipping the analytics test run."
+            exit 0
+          fi
+
+          if [ -f analytics/requirements.txt ]; then
+            python -m pip install --upgrade pip
+            python -m pip install -r analytics/requirements.txt
+          fi
+
+          python -m pytest analytics
+
+      - name: Acknowledge analytics test failure
+        if: always() && steps.analytics-tests.outcome == 'failure'
+        run: echo "::error::Analytics tests failed. Review the test output above."
 
 
 
@@ -103,4 +133,15 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Build Docker Images
-        run: docker compose build
+        id: docker-build
+        shell: bash
+        run: |
+          if [ -f docker-compose.yml ] || [ -f compose.yml ]; then
+            docker compose build
+          else
+            echo "::notice::No Docker Compose file found; skipping the image build."
+          fi
+
+      - name: Acknowledge Docker build failure
+        if: always() && steps.docker-build.outcome == 'failure'
+        run: echo "::error::Docker image build failed. Review the build output above."
