@@ -87,7 +87,7 @@ export default function LoginPage() {
             <aside className="auth-aside">
                 <Link className="brand" href="/">
                     <span className="brand-mark" aria-hidden="true"><span /><span /><span /></span>
-                    <span>Finance<span className="brand-accent">.</span></span>
+                    <span>FINATS</span>
                 </Link>
                 <div className="auth-aside__content">
                     <p className="eyebrow"><span className="eyebrow__dot" /> Your money, in focus</p>
@@ -100,7 +100,7 @@ export default function LoginPage() {
             <section className="auth-page">
                 <Link className="auth-mobile-brand brand" href="/">
                     <span className="brand-mark" aria-hidden="true"><span /><span /><span /></span>
-                    <span>Finance<span className="brand-accent">.</span></span>
+                    <span>FINATS</span>
                 </Link>
                 <div className="auth-heading">
                     <p className="auth-kicker">Welcome back</p>

@@ -56,7 +56,7 @@ export default function Home() {
             <span />
             <span />
           </span>
-          <span>Finance<span className="brand-accent">.</span></span>
+          <span>FINATS</span>
         </Link>
 
         <div className="landing-nav__links">
@@ -90,7 +90,7 @@ export default function Home() {
           <div className="preview-glow" />
           <div className="preview-window">
             <div className="preview-window__topbar">
-              <span className="preview-brand"><span className="brand-mark brand-mark--mini"><span /><span /><span /></span> Finance.</span>
+              <span className="preview-brand"><span className="brand-mark brand-mark--mini"><span /><span /><span /></span> FINATS</span>
               <span className="preview-avatar">TS</span>
             </div>
             <div className="preview-window__body">
@@ -160,7 +160,7 @@ export default function Home() {
         <div className="section-heading">
           <p className="eyebrow">Everything in one view</p>
           <h2 id="features-heading">Less guesswork.<br /><em>More direction.</em></h2>
-          <p>From the daily details to the long-term goals, Finance. gives your money a simple structure you can actually keep up with.</p>
+            <p>From the daily details to the long-term goals, FINATS gives your money a simple structure you can actually keep up with.</p>
         </div>
         <div className="feature-grid">
           {features.map((feature) => (
@@ -178,7 +178,7 @@ export default function Home() {
         <div className="workflow-copy">
           <p className="eyebrow">A better financial rhythm</p>
           <h2 id="workflow-heading">Your next good decision starts with <em>knowing.</em></h2>
-          <p>Finance. turns scattered transactions into a clear picture, then gives you the tools to do something useful with it.</p>
+          <p>FINATS turns scattered transactions into a clear picture, then gives you the tools to do something useful with it.</p>
           <Link className="text-link" href="/signup">Build your clearer money routine <span aria-hidden="true">→</span></Link>
         </div>
         <div className="workflow-steps">
@@ -197,9 +197,9 @@ export default function Home() {
       </section>
 
       <footer className="landing-footer">
-        <Link className="brand" href="/">Finance<span className="brand-accent">.</span></Link>
+        <Link className="brand" href="/">FINATS</Link>
         <span>Track today. Plan tomorrow.</span>
-        <span>© 2026 Finance.</span>
+        <span>© 2026 FINATS.</span>
       </footer>
     </main>
   );
