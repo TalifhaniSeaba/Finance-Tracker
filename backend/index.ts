@@ -1,7 +1,9 @@
 import express from "express"
 import authRoutes from "./Routes/authRoutes"
+import accountRoutes from "./Routes/accountRoutes"
 import dotenv from "dotenv"
 import cors from "cors"
+import { handleBanklinkWebhook } from "./controllers/banklinkWebhookController"
 
 dotenv.config();
 
@@ -17,9 +19,11 @@ app.use(cors({
 
 
 
-app.use(express.json());
+app.post("/api/webhooks/banklink", express.raw({ type: "application/json" }), handleBanklinkWebhook);
+app.use(express.json({ limit: "15mb" }));
 
 app.use("/api/auth", authRoutes);
+app.use("/api/accounts", accountRoutes);
 
 
 app.get("/", (req, res) => {
