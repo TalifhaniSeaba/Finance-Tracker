@@ -222,7 +222,8 @@ export async function uploadStatement(req: AuthRequest, res: Response) {
   if (importError || !statementImport) return res.status(500).json({ error: importError?.message ?? "Unable to create statement import." });
 
   try {
-    const parsed = isCsv ? parseCsvStatement(buffer.toString("utf8")) : await parsePdfStatement(buffer);
+    const expectedBank = String(((account.metadata ?? {}) as Record<string, unknown>).bank ?? "");
+    const parsed = isCsv ? parseCsvStatement(buffer.toString("utf8")) : await parsePdfStatement(buffer, expectedBank);
     const rows = parsed.map((transaction, index) => {
       const classification = classifyTransaction({ description: transaction.description, counterparty: transaction.counterparty, transactionType: transaction.direction === "credit" ? "income" : "expense" });
       return { user_id: req.user!.id, account_id: accountId, external_id: `statement:${importId}:${index}`, transaction_date: transaction.date, description: transaction.description, reference: transaction.reference, counterparty: transaction.counterparty, currency: transaction.currency, amount: transaction.amount, balance_after: transaction.balance, transaction_type: classification.transactionType, category: classification.category, classification_confidence: classification.confidence, classification_source: `rules:v1:${classification.rule}`, classification_status: classification.status, raw_data: transaction };
