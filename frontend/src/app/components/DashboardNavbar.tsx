@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 
 type NavIcon = "grid" | "arrow" | "chart" | "wallet" | "target" | "file" | "menu" | "close" | "help" | "more";
 
@@ -22,21 +23,22 @@ function NavIcon({ name }: { name: NavIcon }) {
   return <svg {...common}>{paths[name]}</svg>;
 }
 
-const items: { label: string; icon: NavIcon; active?: boolean }[] = [
-  { label: "Overview", icon: "grid", active: true },
-  { label: "Transactions", icon: "arrow" },
-  { label: "Analytics", icon: "chart" },
-  { label: "Budgets", icon: "wallet" },
-  { label: "Savings goals", icon: "target" },
-  { label: "Reports", icon: "file" },
+const items: { label: string; icon: NavIcon; href?: string; disabled?: boolean }[] = [
+  { label: "Overview", icon: "grid", href: "/dashboard" },
+  { label: "Transactions", icon: "arrow", href: "/transactions" },
+  { label: "Analytics", icon: "chart", disabled: true },
+  { label: "Budgets", icon: "wallet", disabled: true },
+  { label: "Savings goals", icon: "target", disabled: true },
+  { label: "Reports", icon: "file", disabled: true },
 ];
 
 export default function DashboardNavbar() {
   const [open, setOpen] = useState(false);
+  const pathname = usePathname();
   return <>
     <aside className={`dashboard-sidebar ${open ? "dashboard-sidebar--open" : ""}`}>
       <div className="dashboard-sidebar__top"><Link className="brand dashboard-brand" href="/"><span className="brand-mark" aria-hidden="true"><span /><span /><span /></span><span>FINATS</span></Link><button className="dashboard-mobile-close" type="button" aria-label="Close navigation" onClick={() => setOpen(false)}><NavIcon name="close" /></button></div>
-      <nav className="dashboard-nav" aria-label="Dashboard navigation"><p className="dashboard-nav__label">Workspace</p>{items.map((item) => <Link className={`dashboard-nav__item ${item.active ? "is-active" : ""}`} href={item.label === "Overview" ? "/dashboard" : `#${item.label.toLowerCase().replaceAll(" ", "-")}`} key={item.label} onClick={() => setOpen(false)}><NavIcon name={item.icon} /><span>{item.label}</span>{item.label === "Reports" && <span className="dashboard-nav__soon">Soon</span>}</Link>)}</nav>
+      <nav className="dashboard-nav" aria-label="Dashboard navigation"><p className="dashboard-nav__label">Workspace</p>{items.map((item) => { const active = item.href ? pathname === item.href : false; const content = <><NavIcon name={item.icon} /><span>{item.label}</span>{item.disabled && <span className="dashboard-nav__soon">Soon</span>}</>; return item.disabled ? <span className="dashboard-nav__item is-disabled" aria-disabled="true" key={item.label}>{content}</span> : <Link className={`dashboard-nav__item ${active ? "is-active" : ""}`} href={item.href ?? "/dashboard"} key={item.label} onClick={() => setOpen(false)}>{content}</Link>; })}</nav>
       <div className="dashboard-sidebar__bottom"><button className="dashboard-help" type="button"><span className="dashboard-help__mark"><NavIcon name="help" /></span><span><b>Need a hand?</b><small>Explore the guide</small></span><NavIcon name="arrow" /></button><div className="dashboard-profile"><span className="dashboard-avatar">U</span><span><b>Personal account</b><small>Manual tracking</small></span><NavIcon name="more" /></div></div>
     </aside>
     {open && <button className="dashboard-sidebar-scrim" type="button" aria-label="Close navigation" onClick={() => setOpen(false)} />}

@@ -23,6 +23,8 @@ function toAccount(row: Record<string, unknown>) {
     balance: row.balance ?? 0,
     currency: row.currency ?? "ZAR",
     lastSyncedAt: row.last_synced_at ?? null,
+    balanceAsOf: metadata.balance_as_of ?? null,
+    balanceSource: metadata.balance_source ?? null,
     statementName: metadata.statement_name ?? undefined,
   };
 }
@@ -169,7 +171,7 @@ export async function startBanklinkConnection(req: AuthRequest, res: Response) {
 export async function listAccountTransactions(req: AuthRequest, res: Response) {
   const { data, error } = await supabase
     .from("transactions")
-    .select("id, account_id, description, counterparty, reference, category, amount, currency, transaction_type, transaction_date")
+    .select("id, account_id, description, counterparty, reference, category, amount, balance_after, currency, transaction_type, transaction_date")
     .eq("account_id", req.params.accountId)
     .eq("user_id", req.user!.id)
     .order("transaction_date", { ascending: false });
@@ -182,6 +184,7 @@ export async function listAccountTransactions(req: AuthRequest, res: Response) {
     name: transaction.description,
     counterparty: transaction.counterparty ?? undefined,
     reference: transaction.reference ?? undefined,
+    balanceAfter: transaction.balance_after == null ? null : Number(transaction.balance_after),
     currency: transaction.currency,
     category: transaction.category ?? "Uncategorised",
     amount: Number(transaction.amount),
@@ -237,9 +240,13 @@ export async function uploadStatement(req: AuthRequest, res: Response) {
       }
     }
 
-    const latestBalance = [...parsed].reverse().find((transaction) => transaction.balance != null)?.balance ?? null;
+    const newestBalanceTransaction = parsed
+      .filter((transaction) => transaction.balance != null && Number.isFinite(Number(transaction.balance)))
+      .sort((first, second) => second.date.localeCompare(first.date))[0];
+    const latestBalance = newestBalanceTransaction?.balance ?? null;
+    const balanceAsOf = newestBalanceTransaction?.date ?? null;
     const now = new Date().toISOString();
-    const { data: updatedAccount, error: accountUpdateError } = await supabase.from("bank_accounts").update({ status: "connected", balance: latestBalance, last_synced_at: now, metadata: { ...((account.metadata ?? {}) as Record<string, unknown>), source: "statement", statement_name: fileName } }).eq("id", accountId).eq("user_id", req.user!.id).select("id, name, account_last4, balance, currency, status, last_synced_at, metadata, created_at").single();
+    const { data: updatedAccount, error: accountUpdateError } = await supabase.from("bank_accounts").update({ status: "connected", balance: latestBalance, last_synced_at: now, metadata: { ...((account.metadata ?? {}) as Record<string, unknown>), source: "statement", statement_name: fileName, balance_source: "statement", balance_as_of: balanceAsOf } }).eq("id", accountId).eq("user_id", req.user!.id).select("id, name, account_last4, balance, currency, status, last_synced_at, metadata, created_at").single();
     if (accountUpdateError || !updatedAccount) throw new Error(accountUpdateError?.message ?? "Unable to update account after import.");
     await supabase.from("statement_imports").update({ status: "completed", transaction_count: rows.length, processed_at: now }).eq("id", importId);
     return res.status(201).json({ import: { id: importId, status: "completed", transactionCount: rows.length }, account: toAccount(updatedAccount) });

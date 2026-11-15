@@ -35,6 +35,7 @@ const displayDate = (value: string) => new Intl.DateTimeFormat("en-ZA", { dateSt
 const banks = ["FNB", "Absa", "Capitec", "Nedbank", "Standard Bank", "Discovery"];
 
 function accountStatusLabel(account: Account) {
+  if (account.balanceSource === "statement" && account.balanceAsOf) return `Statement balance as of ${displayDate(account.balanceAsOf)}`;
   if (account.status === "connected") return "Connected";
   return account.status === "awaiting_banklink" ? "Awaiting secure sync" : "Awaiting statement processing";
 }
@@ -66,6 +67,10 @@ export default function DashboardPage() {
   const [notice, setNotice] = useState("");
   const [savingAccount, setSavingAccount] = useState(false);
   const [editingAccount, setEditingAccount] = useState<Account | null>(null);
+  const [transactionSearch, setTransactionSearch] = useState("");
+  const [transactionType, setTransactionType] = useState<"all" | "income" | "expense">("all");
+  const [transactionCategory, setTransactionCategory] = useState("all");
+  const selectedAccount = accounts.find((account) => account.id === selectedAccountId);
 
   useEffect(() => {
     let active = true;
@@ -103,7 +108,22 @@ export default function DashboardPage() {
       .catch(() => setTransactions([]));
   }, [selectedAccountId]);
 
-  const selectedAccount = accounts.find((account) => account.id === selectedAccountId);
+  useEffect(() => {
+    if (!selectedAccountId || selectedAccount?.status === "connected") return;
+    let active = true;
+    const refresh = async () => {
+      const [{ accounts: nextAccounts }, { transactions: nextTransactions }] = await Promise.all([
+        listAccounts(),
+        listAccountTransactions(selectedAccountId),
+      ]);
+      if (!active) return;
+      setAccounts(nextAccounts);
+      setTransactions(nextTransactions);
+    };
+    const timer = window.setInterval(() => { void refresh().catch(() => undefined); }, 5000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [selectedAccountId, selectedAccount?.status]);
+
   const selectedTransactions = useMemo(() => transactions.filter((transaction) => transaction.accountId === selectedAccountId && isInDateRange(transaction.date, dateRange)), [selectedAccountId, dateRange, transactions]);
   const income = selectedTransactions.filter((item) => item.type === "income").reduce((sum, item) => sum + item.amount, 0);
   const expenses = selectedTransactions.filter((item) => item.type === "expense").reduce((sum, item) => sum + item.amount, 0);
@@ -112,6 +132,14 @@ export default function DashboardPage() {
     selectedTransactions.filter((item) => item.type === "expense").forEach((item) => grouped.set(item.category, (grouped.get(item.category) ?? 0) + item.amount));
     return [...grouped.entries()].sort(([, first], [, second]) => second - first);
   }, [selectedTransactions]);
+  const transactionCategories = useMemo(() => [...new Set(selectedTransactions.map((transaction) => transaction.category))].sort(), [selectedTransactions]);
+  const filteredTransactions = useMemo(() => {
+    const query = transactionSearch.trim().toLowerCase();
+    return selectedTransactions.filter((transaction) => {
+      const matchesQuery = !query || [transaction.name, transaction.counterparty, transaction.reference, transaction.category].some((value) => value?.toLowerCase().includes(query));
+      return matchesQuery && (transactionType === "all" || transaction.type === transactionType) && (transactionCategory === "all" || transaction.category === transactionCategory);
+    });
+  }, [selectedTransactions, transactionSearch, transactionType, transactionCategory]);
 
   function chooseBank(event: ChangeEvent<HTMLSelectElement>) {
     const nextBank = event.target.value;
@@ -203,6 +231,7 @@ export default function DashboardPage() {
         {notice && <div className="integration-notice" role="status"><Icon name="check" size={16} /><span>{notice}</span><button type="button" aria-label="Dismiss notice" onClick={() => setNotice("")}><Icon name="close" size={15} /></button></div>}
         {!selectedAccount && <section className="data-source-panel"><div><span className="data-source-panel__icon"><Icon name="link" size={18} /></span><div><p className="panel-kicker">Secure data connection</p><h3>Bring in your real bank data</h3><p>Connect FNB through Banklink or upload a statement from any supported bank. Transactions will be classified and shown here after processing.</p></div></div><button className="button button--primary" type="button" onClick={() => setShowConnect(true)}><Icon name="plus" size={15} /> Add bank account</button></section>}
         {selectedAccount && <section className="selected-source-banner"><div><span className="data-source-panel__icon"><Icon name={selectedAccount.source === "banklink" ? "link" : "file"} size={18} /></span><div><p className="panel-kicker">Showing only this account</p><h3>{selectedAccount.name} · {selectedAccount.bank}</h3><p>{selectedAccount.source === "banklink" ? "Banklink connection" : `Statement import${selectedAccount.statementName ? ` · ${selectedAccount.statementName}` : ""}`} · {accountStatusLabel(selectedAccount)}</p></div></div><button className="button button--outline" type="button" onClick={() => { setEditingAccount(null); setShowConnect(true); }}>Add another account</button></section>}
+        {selectedAccount && <section id="transactions" className="dashboard-panel transactions-panel"><div className="panel-heading"><div><p className="panel-kicker">Selected account activity</p><h3>Transactions</h3></div><span className="transaction-count">{filteredTransactions.length} shown</span></div><div className="transaction-filters"><label className="transaction-search"><Icon name="search" size={15} /><input value={transactionSearch} onChange={(event) => setTransactionSearch(event.target.value)} placeholder="Search transactions" aria-label="Search transactions" /></label><label><span className="sr-only">Transaction type</span><select value={transactionType} onChange={(event) => setTransactionType(event.target.value as "all" | "income" | "expense")}><option value="all">All types</option><option value="income">Income</option><option value="expense">Expenses</option></select></label><label><span className="sr-only">Transaction category</span><select value={transactionCategory} onChange={(event) => setTransactionCategory(event.target.value)}><option value="all">All categories</option>{transactionCategories.map((category) => <option key={category} value={category}>{category}</option>)}</select></label></div>{filteredTransactions.length ? <div className="transaction-table" role="table" aria-label="Imported transactions"><div className="transaction-table__head" role="row"><span>Date</span><span>Description</span><span>Category</span><span>Type</span><span>Amount</span><span>Balance</span></div>{filteredTransactions.map((transaction) => <div className="transaction-table__row" role="row" key={transaction.id}><span>{displayDate(transaction.date)}</span><span><b>{transaction.name}</b><small>{transaction.counterparty || transaction.reference || "Imported transaction"}</small></span><span>{transaction.category}</span><span>{transaction.type}</span><strong className={transaction.type === "income" ? "is-income" : ""}>{transaction.type === "income" ? "+" : "-"}{new Intl.NumberFormat("en-ZA", { style: "currency", currency: transaction.currency || "ZAR" }).format(transaction.amount)}</strong><span>{transaction.balanceAfter == null ? "—" : new Intl.NumberFormat("en-ZA", { style: "currency", currency: transaction.currency || "ZAR" }).format(transaction.balanceAfter)}</span></div>)}</div> : <EmptyState text="No imported transactions match these filters." />}</section>}
         {selectedAccount && <><section className="dashboard-metrics" aria-label="Financial summary"><MetricCard title="Selected balance" value={selectedAccount.balance ? formatCurrency(selectedAccount.balance) : "—"} icon="wallet" primary /><MetricCard title="Income" value={income ? formatCurrency(income) : "—"} icon="arrow-down-left" /><MetricCard title="Expenses" value={expenses ? formatCurrency(expenses) : "—"} icon="arrow-up-right-small" /><MetricCard title="Net savings" value={selectedTransactions.length ? formatCurrency(income - expenses) : "—"} icon="target" /></section><section className="dashboard-grid dashboard-grid--main"><article className="dashboard-panel"><div className="panel-heading"><div><p className="panel-kicker">Financial activity</p><h3>Income vs expenses</h3></div></div><SummaryBars income={income} expenses={expenses} /></article><article className="dashboard-panel"><div className="panel-heading"><div><p className="panel-kicker">Classification</p><h3>Spending categories</h3></div></div>{categories.length ? <div className="spending-list spending-list--full">{categories.map(([category, amount], index) => <div className="spending-row" key={category}><span className={`spending-dot spending-dot--${["home", "food", "transport", "other"][index % 4]}`} /><span className="spending-row__name">{category}<small>{formatCurrency(amount)} spent</small></span><b>{expenses ? Math.round(amount / expenses * 100) : 0}%</b></div>)}</div> : <EmptyState text="Classified expense categories will appear after transactions are imported." />}</article></section></>}
         <section className="dashboard-section-heading"><div><p className="panel-kicker">Your connected accounts</p><h3>Cards & accounts</h3></div><button className="add-button" type="button" onClick={() => { setEditingAccount(null); setShowConnect(true); }}><Icon name="plus" size={16} /> Add account</button></section><section className="cards-layout">{accounts.length ? <><div className="card-rail">{accounts.map((account) => <div className="account-card-wrap" key={account.id}><button className={`account-card account-card--${account.color} ${account.id === selectedAccountId ? "is-selected" : ""}`} type="button" onClick={() => editAccountDetails(account)} aria-label={`Edit ${account.name}`}><div className="account-card__top"><span>{account.name}</span><b>{account.bank}</b></div><strong>{account.balance ? formatCurrency(account.balance) : "Awaiting data"}</strong><div className="account-card__bottom"><span>•••• {account.number}</span><span>{account.id === selectedAccountId ? "Selected" : "Edit card"}</span></div></button><div className="account-card-actions"><button type="button" className="account-card-action account-card-action--danger" onClick={() => removeAccount(account)}><Icon name="close" size={14} /> Delete</button></div></div>)}</div><article className="dashboard-panel selected-card-detail"><div className="selected-card-detail__heading"><div><p className="panel-kicker">Card details</p><h3>{selectedAccount?.name}</h3></div><span className="selected-badge">{selectedAccount ? accountStatusLabel(selectedAccount) : ""}</span></div>{selectedAccount && <><div className="selected-card-detail__balance"><span>Current balance</span><strong>{selectedAccount.balance ? formatCurrency(selectedAccount.balance) : "Awaiting data"}</strong></div><div className="selected-card-detail__stats"><div><span>Bank</span><b>{selectedAccount.bank}</b></div><div><span>Account</span><b>•••• {selectedAccount.number}</b></div><div><span>Data source</span><b>{selectedAccount.source === "banklink" ? "Banklink" : "PDF statement"}</b></div><div><span>Last synced</span><b>{selectedAccount.lastSyncedAt ? new Date(selectedAccount.lastSyncedAt).toLocaleString("en-ZA") : "Not synced yet"}</b></div></div></>}</article></> : <div className="empty-accounts"><Icon name="wallet" size={25} /><h3>No connected accounts</h3><p>Add an FNB Banklink connection or upload a statement from any bank.</p><button className="add-button" type="button" onClick={() => setShowConnect(true)}><Icon name="plus" size={16} /> Add account</button></div>}</section>
       </div></main>{showConnect && <ConnectionModal editing={Boolean(editingAccount)} bank={bank} method={method} accountName={accountName} accountNumber={accountNumber} statementFile={statementFile} savingAccount={savingAccount} onBankChange={chooseBank} onMethodChange={setMethod} onNameChange={setAccountName} onNumberChange={setAccountNumber} onFileChange={setStatementFile} onSubmit={connectAccount} onClose={() => { setShowConnect(false); setEditingAccount(null); }} />}</div>;

@@ -12,9 +12,11 @@ export type Account = {
     balance: number;
     currency: string;
     lastSyncedAt: string | null;
+    balanceAsOf?: string | null;
+    balanceSource?: "statement" | "banklink" | null;
     statementName?: string;
 };
-export type AccountTransaction = { id: string; accountId: string; name: string; counterparty?: string; reference?: string; category: string; amount: number; currency: string; type: "income" | "expense"; date: string };
+export type AccountTransaction = { id: string; accountId: string; name: string; counterparty?: string; reference?: string; category: string; amount: number; balanceAfter?: number | null; currency: string; type: "income" | "expense"; date: string };
 
 export function listAccounts(): Promise<{ accounts: Account[] }> {
     return apiFetch("/api/accounts");

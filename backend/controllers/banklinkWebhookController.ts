@@ -199,7 +199,17 @@ export async function handleBanklinkWebhook(req: Request, res: Response) {
 
     const connectionMetadata = { ...(connection.metadata as Record<string, unknown>), webhook_event: eventName, last_account_number: payload.account_number ?? null };
     await supabase.from("bank_connections").update({ status: "connected", external_profile_id: payload.bank_profile_id ?? null, last_synced_at: new Date().toISOString(), metadata: connectionMetadata }).eq("id", connection.id);
-    await supabase.from("bank_accounts").update({ status: "connected", last_synced_at: new Date().toISOString(), metadata: { ...(account.metadata as Record<string, unknown>), banklink_account_number: payload.account_number ?? null } }).eq("id", account.id);
+    const newestBalanceTransaction = transactions
+      .filter((transaction) => transaction.balance != null && Number.isFinite(Number(transaction.balance)) && normalizeDate(transaction.date))
+      .sort((first, second) => String(second.date).localeCompare(String(first.date)))[0];
+    const latestBalance = newestBalanceTransaction?.balance;
+    const balanceAsOf = normalizeDate(newestBalanceTransaction?.date);
+    await supabase.from("bank_accounts").update({
+      status: "connected",
+      balance: latestBalance == null || !Number.isFinite(Number(latestBalance)) ? undefined : Number(latestBalance),
+      last_synced_at: new Date().toISOString(),
+      metadata: { ...(account.metadata as Record<string, unknown>), banklink_account_number: payload.account_number ?? null, balance_source: "banklink", balance_as_of: balanceAsOf ?? new Date().toISOString().slice(0, 10) },
+    }).eq("id", account.id);
     await supabase.from("webhook_events").update({ processing_status: "processed", processed_at: new Date().toISOString() }).eq("id", storedEvent.id);
 
     return res.status(200).json({ received: true, processed: true, transactions: rows.length });
