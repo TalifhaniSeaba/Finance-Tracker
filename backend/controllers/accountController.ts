@@ -26,7 +26,21 @@ function toAccount(row: Record<string, unknown>) {
     balanceAsOf: metadata.balance_as_of ?? null,
     balanceSource: metadata.balance_source ?? null,
     statementName: metadata.statement_name ?? undefined,
+    lastStatementUploadAt: metadata.last_statement_upload_at ?? null,
+    statementPeriodStart: metadata.statement_period_start ?? null,
+    statementPeriodEnd: metadata.statement_period_end ?? null,
   };
+}
+
+function transactionFingerprint(transaction: { date: string; amount: number; description: string; reference: string | null }) {
+  return crypto.createHash("sha256")
+    .update([
+      transaction.date,
+      Number(transaction.amount).toFixed(2),
+      transaction.description.trim().replace(/\s+/g, " ").toLowerCase(),
+      (transaction.reference ?? "").trim().replace(/\s+/g, " ").toLowerCase(),
+    ].join("|"))
+    .digest("hex");
 }
 
 export async function listAccounts(req: AuthRequest, res: Response) {
@@ -224,15 +238,25 @@ export async function uploadStatement(req: AuthRequest, res: Response) {
   try {
     const expectedBank = String(((account.metadata ?? {}) as Record<string, unknown>).bank ?? "");
     const parsed = isCsv ? parseCsvStatement(buffer.toString("utf8")) : await parsePdfStatement(buffer, expectedBank);
-    const rows = parsed.map((transaction, index) => {
+    const periodStart = parsed.reduce((earliest, transaction) => transaction.date < earliest ? transaction.date : earliest, parsed[0]?.date ?? null);
+    const periodEnd = parsed.reduce((latest, transaction) => transaction.date > latest ? transaction.date : latest, parsed[0]?.date ?? null);
+    const fingerprints = parsed.map(transactionFingerprint);
+    const { data: existingTransactions, error: existingError } = fingerprints.length === 0
+      ? { data: [], error: null }
+      : await supabase.from("transactions").select("transaction_fingerprint").eq("account_id", accountId).in("transaction_fingerprint", fingerprints);
+    if (existingError) throw new Error(existingError.message);
+    const existingFingerprints = new Set((existingTransactions ?? []).map((transaction) => transaction.transaction_fingerprint).filter((fingerprint): fingerprint is string => Boolean(fingerprint)));
+    const newTransactions = parsed.filter((_, index) => fingerprints.indexOf(fingerprints[index]) === index && !existingFingerprints.has(fingerprints[index]));
+    const overlapCount = parsed.length - newTransactions.length;
+    const rows = newTransactions.map((transaction, index) => {
       const classification = classifyTransaction({ description: transaction.description, counterparty: transaction.counterparty, transactionType: transaction.direction === "credit" ? "income" : "expense" });
-      return { user_id: req.user!.id, account_id: accountId, external_id: `statement:${importId}:${index}`, transaction_date: transaction.date, description: transaction.description, reference: transaction.reference, counterparty: transaction.counterparty, currency: transaction.currency, amount: transaction.amount, balance_after: transaction.balance, transaction_type: classification.transactionType, category: classification.category, classification_confidence: classification.confidence, classification_source: `rules:v1:${classification.rule}`, classification_status: classification.status, raw_data: transaction };
+      return { user_id: req.user!.id, account_id: accountId, external_id: `statement:${importId}:${index}`, transaction_fingerprint: transactionFingerprint(transaction), transaction_date: transaction.date, description: transaction.description, reference: transaction.reference, counterparty: transaction.counterparty, currency: transaction.currency, amount: transaction.amount, balance_after: transaction.balance, transaction_type: classification.transactionType, category: classification.category, classification_confidence: classification.confidence, classification_source: `rules:v1:${classification.rule}`, classification_status: classification.status, raw_data: transaction };
     });
 
     if (rows.length > 0) {
-      const { error: transactionError } = await supabase.from("transactions").upsert(rows, { onConflict: "account_id,external_id" });
+      const { error: transactionError } = await supabase.from("transactions").upsert(rows, { onConflict: "account_id,transaction_fingerprint", ignoreDuplicates: true });
       if (transactionError) throw new Error(transactionError.message);
-      const { data: storedTransactions, error: storedError } = await supabase.from("transactions").select("id, transaction_type, category, classification_confidence, classification_source, raw_data").eq("account_id", accountId).in("external_id", rows.map((row) => row.external_id));
+      const { data: storedTransactions, error: storedError } = await supabase.from("transactions").select("id, transaction_type, category, classification_confidence, classification_source, raw_data").eq("account_id", accountId).in("transaction_fingerprint", rows.map((row) => row.transaction_fingerprint));
       if (storedError) throw new Error(storedError.message);
       const classificationRows = (storedTransactions ?? []).map((transaction) => ({ transaction_id: transaction.id, classifier_version: "rules:v1", transaction_type: transaction.transaction_type, category: transaction.category, confidence: transaction.classification_confidence, source: "rules", raw_result: { source: transaction.classification_source, provider_data: transaction.raw_data } }));
       if (classificationRows.length > 0) {
@@ -246,11 +270,14 @@ export async function uploadStatement(req: AuthRequest, res: Response) {
       .sort((first, second) => second.date.localeCompare(first.date))[0];
     const latestBalance = newestBalanceTransaction?.balance ?? null;
     const balanceAsOf = newestBalanceTransaction?.date ?? null;
+    const previousMetadata = (account.metadata ?? {}) as Record<string, unknown>;
+    const previousBalanceAsOf = typeof previousMetadata.balance_as_of === "string" ? previousMetadata.balance_as_of : null;
+    const shouldUpdateBalance = latestBalance != null && (!previousBalanceAsOf || !balanceAsOf || balanceAsOf >= previousBalanceAsOf);
     const now = new Date().toISOString();
-    const { data: updatedAccount, error: accountUpdateError } = await supabase.from("bank_accounts").update({ status: "connected", balance: latestBalance, last_synced_at: now, metadata: { ...((account.metadata ?? {}) as Record<string, unknown>), source: "statement", statement_name: fileName, balance_source: "statement", balance_as_of: balanceAsOf } }).eq("id", accountId).eq("user_id", req.user!.id).select("id, name, account_last4, balance, currency, status, last_synced_at, metadata, created_at").single();
+    const { data: updatedAccount, error: accountUpdateError } = await supabase.from("bank_accounts").update({ status: "connected", ...(shouldUpdateBalance ? { balance: latestBalance } : {}), last_synced_at: now, metadata: { ...previousMetadata, source: "statement", statement_name: fileName, balance_source: "statement", ...(shouldUpdateBalance && balanceAsOf ? { balance_as_of: balanceAsOf } : {}), last_statement_upload_at: now, ...(periodStart ? { statement_period_start: periodStart } : {}), ...(periodEnd ? { statement_period_end: periodEnd } : {}), last_statement_import_id: importId } }).eq("id", accountId).eq("user_id", req.user!.id).select("id, name, account_last4, balance, currency, status, last_synced_at, metadata, created_at").single();
     if (accountUpdateError || !updatedAccount) throw new Error(accountUpdateError?.message ?? "Unable to update account after import.");
-    await supabase.from("statement_imports").update({ status: "completed", transaction_count: rows.length, processed_at: now }).eq("id", importId);
-    return res.status(201).json({ import: { id: importId, status: "completed", transactionCount: rows.length }, account: toAccount(updatedAccount) });
+    await supabase.from("statement_imports").update({ status: "completed", transaction_count: rows.length, processed_at: now, metadata: { period_start: periodStart, period_end: periodEnd, parsed_count: parsed.length, new_count: rows.length, overlap_count: overlapCount } }).eq("id", importId);
+    return res.status(201).json({ import: { id: importId, status: "completed", transactionCount: rows.length, parsedCount: parsed.length, overlapCount, periodStart, periodEnd }, account: toAccount(updatedAccount) });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Unable to parse statement.";
     await supabase.from("statement_imports").update({ status: "failed", error_message: message }).eq("id", importId);

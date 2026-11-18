@@ -75,6 +75,29 @@ function parseDate(value: string | undefined) {
     : null;
 }
 
+function parsePdfDate(value: string | undefined, fallbackYear: number | null) {
+  const parsed = parseDate(value);
+  if (parsed || !value || fallbackYear == null) return parsed;
+  return parseDate(`${value.trim()} ${fallbackYear}`);
+}
+
+// A statement contains many date/amount pairs that are not transactions.
+// These are labels for metadata or totals, not merchant activity.
+const nonTransactionDescriptionPatterns = [
+  /^(?:opening|closing|available|current|ledger)\s+balance\b/i,
+  /^(?:balance\s+(?:brought|carried)\s+forward)\b/i,
+  /^(?:account\s+)?(?:summary|totals?|subtotals?)\b/i,
+  /^(?:statement|account)\s+(?:period|details?|information)\b/i,
+  /^(?:page|branch|sort\s+code|account\s+(?:number|no\.?))\b/i,
+  /^(?:from|to|as\s+of|period)\s*:/i,
+];
+
+function isLikelyTransactionDescription(value: string | undefined) {
+  const description = value?.replace(/\s+/g, " ").trim() ?? "";
+  if (!/[A-Za-z]{2,}/.test(description)) return false;
+  return !nonTransactionDescriptionPatterns.some((pattern) => pattern.test(description));
+}
+
 export function parseCsvStatement(content: string): ParsedStatementTransaction[] {
   const firstLine = content.split(/\r?\n/, 1)[0] ?? "";
   const delimiter = firstLine.includes(";") ? ";" : firstLine.includes("\t") ? "\t" : ",";
@@ -104,7 +127,7 @@ export function parseCsvStatement(content: string): ParsedStatementTransaction[]
     const credit = creditIndex === undefined ? null : parseAmount(row[creditIndex]);
     const rawAmount = amountIndex === undefined ? null : parseAmount(row[amountIndex]);
     const amount = debit != null && debit !== 0 ? Math.abs(debit) : credit != null && credit !== 0 ? Math.abs(credit) : rawAmount == null ? null : Math.abs(rawAmount);
-    if (!date || !description || amount == null || amount === 0) return [];
+    if (!date || !isLikelyTransactionDescription(description) || amount == null || amount === 0) return [];
 
     const direction = debit != null && debit !== 0 ? "debit" : credit != null && credit !== 0 ? "credit" : rawAmount != null && rawAmount < 0 ? "debit" : "credit";
     return [{ date, description, amount, direction, balance: balanceIndex === undefined ? null : parseAmount(row[balanceIndex]), reference: referenceIndex === undefined ? null : row[referenceIndex] || null, counterparty: counterpartyIndex === undefined ? null : row[counterpartyIndex] || null, currency: (currencyIndex === undefined ? "ZAR" : row[currencyIndex] || "ZAR").trim().toUpperCase() }];
@@ -132,8 +155,9 @@ function detectedBanks(text: string) {
 
 
 function parsePdfAmount(value: string) {
-  const negative = value.includes("-") || (value.startsWith("(") && value.endsWith(")"));
-  const normalized = value.replace(/[R$€£()\s]/g, "").replace(/,(?=\d{2}$)/, ".").replace(/,/g, "");
+  const debit = /dr\s*$/i.test(value);
+  const negative = debit || value.includes("-") || (value.startsWith("(") && value.endsWith(")"));
+  const normalized = value.replace(/[R$€£()\s]/g, "").replace(/(?:cr|dr)$/i, "").replace(/,(?=\d{2}$)/, ".").replace(/,/g, "");
   const amount = Number(normalized);
   return Number.isFinite(amount) ? (negative ? -Math.abs(amount) : Math.abs(amount)) : null;
 }
@@ -141,7 +165,7 @@ function parsePdfAmount(value: string) {
 export async function parsePdfStatement(content: Buffer, expectedBank: string): Promise<ParsedStatementTransaction[]> {
   const parser = new PDFParse({ data: content });
   try {
-    const result = await parser.getText();
+    const result = await parser.getText({ lineEnforce: true, cellSeparator: "\t", cellThreshold: 7 });
     const text = result.text.replace(/\u00a0/g, " ");
     if (!text.trim()) throw new Error("This PDF contains no selectable text. It may be scanned and require OCR.");
     const foundBanks = detectedBanks(text);
@@ -150,12 +174,17 @@ export async function parsePdfStatement(content: Buffer, expectedBank: string): 
     }
 
     const transactions: ParsedStatementTransaction[] = [];
-    const datePattern = "\\d{4}[-/]\\d{2}[-/]\\d{2}|\\d{1,2}[/.]\\d{1,2}[/.]\\d{4}|\\d{1,2}\\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\\s+\\d{4}";
-    const amountPattern = "(?:[R$€£]\\s*)?[-(]?\\d[\\d\\s,]*(?:[.,]\\d{2})\\)?";
+    const fallbackYearMatch = text.match(/\b(20\d{2})\b/);
+    const fallbackYear = fallbackYearMatch ? Number(fallbackYearMatch[1]) : null;
+    const datePattern = "\\d{4}[-/]\\d{2}[-/]\\d{2}|\\d{1,2}[/.]\\d{1,2}[/.]\\d{4}|\\d{1,2}\\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*(?:\\s+\\d{4})?";
+    const amountPattern = "(?:[R$€£]\\s*)?[-(]?\\d[\\d\\s,]*(?:[.,]\\d{2})\\)?\\s*(?:Cr|Dr)?";
     for (const line of text.split(/\r?\n/).map((item) => item.trim()).filter(Boolean)) {
-      const dateMatch = line.match(new RegExp(`\\b(${datePattern})\\b`, "i"));
+      // Transaction rows in supported statements begin with their posting date.
+      // Searching for a date anywhere would also capture statement periods,
+      // headers, and explanatory text containing an amount.
+      const dateMatch = line.match(new RegExp(`^(?:[-*•]\\s*)?(${datePattern})\\b`, "i"));
       if (!dateMatch) continue;
-      const date = parseDate(dateMatch[1]);
+      const date = parsePdfDate(dateMatch[1], fallbackYear);
       const amountMatches = line.match(new RegExp(amountPattern, "g")) ?? [];
       const amounts = amountMatches.map(parsePdfAmount).filter((amount): amount is number => amount != null);
       if (!date || amounts.length === 0) continue;
@@ -163,10 +192,37 @@ export async function parsePdfStatement(content: Buffer, expectedBank: string): 
       const transactionAmount = amounts.length > 1 ? amounts[amounts.length - 2] : amounts[0];
       const balance = amounts.length > 1 ? amounts[amounts.length - 1] : null;
       const description = line.replace(dateMatch[0], "").replace(new RegExp(amountPattern, "g"), " ").replace(/\s+/g, " ").trim();
-      if (!description || transactionAmount === 0) continue;
+      if (!isLikelyTransactionDescription(description) || transactionAmount === 0) continue;
       const lower = line.toLowerCase();
-      const direction = transactionAmount < 0 || /\b(debit|withdrawal|payment)\b/.test(lower) ? "debit" : "credit";
+      const direction = transactionAmount < 0 || /\b(debit|withdrawal|payment|dr)\b/.test(lower) ? "debit" : "credit";
       transactions.push({ date, description, amount: Math.abs(transactionAmount), direction, balance, reference: null, counterparty: null, currency: "ZAR" });
+    }
+
+    // Some FNB PDFs preserve the visible table but do not expose complete
+    // transaction rows in plain-text extraction. Use the library's cell-aware
+    // table extraction as a fallback for that layout.
+    if (transactions.length === 0) {
+      const tableResult = await parser.getTable();
+      const tableRows = tableResult.mergedTables.flat();
+      const tableAmountPattern = /^(?:[R$€£]\s*)?[-(]?\d[\d\s,]*(?:[.,]\d{2})\)?\s*(?:Cr|Dr)?$/i;
+      for (const row of tableRows) {
+        const cells = row.map((cell) => cell.replace(/\s+/g, " ").trim()).filter(Boolean);
+        if (cells.length < 3) continue;
+        const dateCellIndex = cells.findIndex((cell) => parsePdfDate(cell, fallbackYear) != null);
+        if (dateCellIndex < 0) continue;
+        const date = parsePdfDate(cells[dateCellIndex], fallbackYear);
+        const amountCells = cells
+          .map((cell, index) => ({ cell, index, amount: tableAmountPattern.test(cell) ? parsePdfAmount(cell) : null }))
+          .filter((item): item is { cell: string; index: number; amount: number } => item.amount != null);
+        if (!date || amountCells.length === 0) continue;
+        const transactionAmount = amountCells.length > 1 ? amountCells[amountCells.length - 2].amount : amountCells[0].amount;
+        const balance = amountCells.length > 1 ? amountCells[amountCells.length - 1].amount : null;
+        const description = cells.slice(dateCellIndex + 1, amountCells[0].index).join(" ");
+        if (!isLikelyTransactionDescription(description) || transactionAmount === 0) continue;
+        const lower = row.join(" ").toLowerCase();
+        const direction = transactionAmount < 0 || /\b(debit|withdrawal|payment|dr)\b/.test(lower) ? "debit" : "credit";
+        transactions.push({ date, description, amount: Math.abs(transactionAmount), direction, balance, reference: null, counterparty: null, currency: "ZAR" });
+      }
     }
     if (transactions.length === 0) throw new Error(`The ${expectedBank} statement identity was detected, but no transaction rows could be read. This bank layout may be unsupported or the PDF may be scanned.`);
     return transactions;

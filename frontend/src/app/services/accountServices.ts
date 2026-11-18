@@ -15,6 +15,9 @@ export type Account = {
     balanceAsOf?: string | null;
     balanceSource?: "statement" | "banklink" | null;
     statementName?: string;
+    lastStatementUploadAt?: string | null;
+    statementPeriodStart?: string | null;
+    statementPeriodEnd?: string | null;
 };
 export type AccountTransaction = { id: string; accountId: string; name: string; counterparty?: string; reference?: string; category: string; amount: number; balanceAfter?: number | null; currency: string; type: "income" | "expense"; date: string };
 
@@ -57,7 +60,7 @@ function fileToBase64(file: File): Promise<string> {
     });
 }
 
-export async function uploadStatement(accountId: string, file: File): Promise<{ account: Account; import: { id: string; status: string; transactionCount: number } }> {
+export async function uploadStatement(accountId: string, file: File): Promise<{ account: Account; import: { id: string; status: string; transactionCount: number; parsedCount: number; overlapCount: number; periodStart: string | null; periodEnd: string | null } }> {
     const contentBase64 = await fileToBase64(file);
     return apiFetch(`/api/accounts/${accountId}/statements`, {
         method: "POST",
