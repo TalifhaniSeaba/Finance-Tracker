@@ -248,10 +248,37 @@ export async function uploadStatement(req: AuthRequest, res: Response) {
     const existingFingerprints = new Set((existingTransactions ?? []).map((transaction) => transaction.transaction_fingerprint).filter((fingerprint): fingerprint is string => Boolean(fingerprint)));
     const newTransactions = parsed.filter((_, index) => fingerprints.indexOf(fingerprints[index]) === index && !existingFingerprints.has(fingerprints[index]));
     const overlapCount = parsed.length - newTransactions.length;
-    const rows = newTransactions.map((transaction, index) => {
-      const classification = classifyTransaction({ description: transaction.description, counterparty: transaction.counterparty, transactionType: transaction.direction === "credit" ? "income" : "expense" });
-      return { user_id: req.user!.id, account_id: accountId, external_id: `statement:${importId}:${index}`, transaction_fingerprint: transactionFingerprint(transaction), transaction_date: transaction.date, description: transaction.description, reference: transaction.reference, counterparty: transaction.counterparty, currency: transaction.currency, amount: transaction.amount, balance_after: transaction.balance, transaction_type: classification.transactionType, category: classification.category, classification_confidence: classification.confidence, classification_source: `rules:v1:${classification.rule}`, classification_status: classification.status, raw_data: transaction };
-    });
+    const rows = newTransactions
+      .filter((transaction) => {
+        const amountValid = Number.isFinite(transaction.amount) && transaction.amount > 0 && transaction.amount < 100_000_000_000;
+        const balanceValid = transaction.balance == null || (Number.isFinite(transaction.balance) && Math.abs(transaction.balance) < 100_000_000_000);
+        return amountValid && balanceValid;
+      })
+      .map((transaction, index) => {
+        const classification = classifyTransaction({ description: transaction.description, counterparty: transaction.counterparty, transactionType: transaction.direction === "credit" ? "income" : "expense" });
+        const safeAmount = Number(Number(transaction.amount).toFixed(2));
+        const safeBalance = transaction.balance != null ? Number(Number(transaction.balance).toFixed(2)) : null;
+        const safeConfidence = Number(Math.min(Math.max(Number(classification.confidence) || 0, 0), 1).toFixed(4));
+        return {
+          user_id: req.user!.id,
+          account_id: accountId,
+          external_id: `statement:${importId}:${index}`,
+          transaction_fingerprint: transactionFingerprint(transaction),
+          transaction_date: transaction.date,
+          description: transaction.description,
+          reference: transaction.reference,
+          counterparty: transaction.counterparty,
+          currency: transaction.currency,
+          amount: safeAmount,
+          balance_after: safeBalance,
+          transaction_type: classification.transactionType,
+          category: classification.category,
+          classification_confidence: safeConfidence,
+          classification_source: `rules:v1:${classification.rule}`,
+          classification_status: classification.status,
+          raw_data: transaction
+        };
+      });
 
     if (rows.length > 0) {
       const { error: transactionError } = await supabase.from("transactions").upsert(rows, { onConflict: "account_id,transaction_fingerprint", ignoreDuplicates: true });
@@ -266,9 +293,9 @@ export async function uploadStatement(req: AuthRequest, res: Response) {
     }
 
     const newestBalanceTransaction = parsed
-      .filter((transaction) => transaction.balance != null && Number.isFinite(Number(transaction.balance)))
+      .filter((transaction) => transaction.balance != null && Number.isFinite(Number(transaction.balance)) && Math.abs(Number(transaction.balance)) < 100_000_000_000)
       .sort((first, second) => second.date.localeCompare(first.date))[0];
-    const latestBalance = newestBalanceTransaction?.balance ?? null;
+    const latestBalance = newestBalanceTransaction?.balance != null ? Number(Number(newestBalanceTransaction.balance).toFixed(2)) : null;
     const balanceAsOf = newestBalanceTransaction?.date ?? null;
     const previousMetadata = (account.metadata ?? {}) as Record<string, unknown>;
     const previousBalanceAsOf = typeof previousMetadata.balance_as_of === "string" ? previousMetadata.balance_as_of : null;
